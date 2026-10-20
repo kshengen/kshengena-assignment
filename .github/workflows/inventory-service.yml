@@ -1,0 +1,107 @@
+name: Inventory Service CI/CD
+
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'inventory-service/**'
+      - '.github/workflows/inventory-service.yml'
+
+  pull_request:
+    branches: [main]
+    paths:
+      - 'inventory-service/**'
+      - '.github/workflows/inventory-service.yml'
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run Python Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: inventory-service
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run pytest
+        run: python -m pytest -v
+
+  build-and-push:
+    name: Build and Publish Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set lowercase image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/inventory-service" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Docker image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./inventory-service
+          file: ./inventory-service/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
